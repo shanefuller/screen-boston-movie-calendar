@@ -264,7 +264,6 @@ def run():
 
     logging.info("Updating Google Calendar")
     update_google_calendar(service, movies)
-    print("Done")
 
 if __name__ == "__main__":
     run()
