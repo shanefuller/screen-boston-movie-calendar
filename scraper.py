@@ -83,7 +83,7 @@ def scrap_movies() -> list:
 # Google Calendar Service creation
 def create_google_calendar_service():
     creds = service_account.Credentials.from_service_account_file(
-        os.path.join(os.getcwd(), 'credentials.json'), scopes=SCOPES
+        '/Users/shane/Development/screen-boston-movie-calendar/credentials.json'
     )
     return build('calendar', 'v3', credentials=creds)
 
