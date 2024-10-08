@@ -291,20 +291,24 @@ def run():
             except ValueError as e:
                 logging.error(f"Skipping event due to error: {e}")
 
-    # Step 3: Identify past events not in the new event keys
-    past_events_to_delete = []
+   # Step 3: Identify future events not in the new event keys
+    future_events_to_delete = []
     for event_key in existing_events_dict.keys():
-        if event_key not in new_event_keys:
-            event_start_time = datetime.strptime(event_key[1], '%Y-%m-%dT%H:%M:%SZ')
-            if event_start_time < datetime.utcnow().astimezone(pytz.utc):
-                past_events_to_delete.append(existing_events_dict[event_key])
+        # Convert event_start_time to a timezone-aware datetime in UTC
+        event_start_time = datetime.strptime(event_key[1], '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=pytz.utc)
+        
+        # Only consider future events for deletion
+        if event_start_time > datetime.utcnow().replace(tzinfo=pytz.utc) and event_key not in new_event_keys:
+            future_events_to_delete.append(existing_events_dict[event_key])
 
-    # Step 4: Delete the identified past events
-    if past_events_to_delete:
-        logging.info("Deleting past events that are not in the new entries...")
-        for event_id in past_events_to_delete:
+    # Step 4: Delete future events that are not in the new list
+    for event_id in future_events_to_delete:
+        try:
             service.events().delete(calendarId=CALENDAR_ID, eventId=event_id).execute()
-            logging.info(f"Deleted past event with ID: {event_id}")
+            logging.info(f"Deleted future event with ID: {event_id}")
+        except HttpError as error:
+            logging.error(f"Error deleting event: {error}")
+
 
 if __name__ == "__main__":
     run()
