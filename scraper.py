@@ -228,8 +228,11 @@ def update_google_calendar(service, movies: list):
             except ValueError as e:
                 logging.error(f"Skipping event due to error: {e}")
 
-# Main function
 def run():
+    # Log the current date and time when the script is executed
+    current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    logging.info(f"Script run at: {current_time}")
+
     parser = argparse.ArgumentParser(description="Movie Scraper and Calendar Updater")
     parser.add_argument("-reset", action="store_true", help="Reset by deleting all future events and adding new ones.")
     parser.add_argument("-see-existing", action="store_true", help="Log all existing calendar events.")
@@ -245,11 +248,11 @@ def run():
         for event_key in existing_events.keys():
             logging.info(event_key)  # Log only if the flag is set
         return
-    
+
     if args.delete_future:
         delete_future_events(service)
         return
-    
+
     if args.delete_all:
         delete_all_events(service)
         return  # We return here because we only want to delete events and stop further actions
@@ -265,5 +268,44 @@ def run():
     logging.info("Updating Google Calendar")
     update_google_calendar(service, movies)
 
+    # Step 1: Fetch existing events after adding new entries
+    existing_events_dict = fetch_all_existing_events(service)
+
+    # Step 2: Create a set of new event titles and their start times
+    new_event_keys = set()
+    for movie in movies:
+        date_str = movie['date']
+        for showtime in movie['showtimes']:
+            if not validate_showtime(showtime):
+                logging.warning(f"Invalid showtime '{showtime}', skipping...")
+                continue
+
+            event_datetime_str = f"{date_str} {showtime}"
+            try:
+                event_datetime = datetime.strptime(event_datetime_str, DATE_FORMAT)
+                local_tz = pytz.timezone(TIMEZONE)
+                utc_start_datetime = local_tz.localize(event_datetime).astimezone(pytz.utc)
+                event_key = (movie['title'].strip(), utc_start_datetime.strftime('%Y-%m-%dT%H:%M:%SZ'))
+                new_event_keys.add(event_key)
+
+            except ValueError as e:
+                logging.error(f"Skipping event due to error: {e}")
+
+    # Step 3: Identify past events not in the new event keys
+    past_events_to_delete = []
+    for event_key in existing_events_dict.keys():
+        if event_key not in new_event_keys:
+            event_start_time = datetime.strptime(event_key[1], '%Y-%m-%dT%H:%M:%SZ')
+            if event_start_time < datetime.utcnow().astimezone(pytz.utc):
+                past_events_to_delete.append(existing_events_dict[event_key])
+
+    # Step 4: Delete the identified past events
+    if past_events_to_delete:
+        logging.info("Deleting past events that are not in the new entries...")
+        for event_id in past_events_to_delete:
+            service.events().delete(calendarId=CALENDAR_ID, eventId=event_id).execute()
+            logging.info(f"Deleted past event with ID: {event_id}")
+
 if __name__ == "__main__":
     run()
+
