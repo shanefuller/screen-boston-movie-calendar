@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import requests
@@ -200,6 +201,16 @@ def validate_showtime(showtime: str) -> bool:
     except ValueError:
         return False
 
+def record_added(movie: dict, start: datetime) -> None:
+    """Note an added screening for the Trackstar Jobs page (run_scraper.sh sets ADDED_ITEMS_FILE)."""
+    path = os.environ.get('ADDED_ITEMS_FILE')
+    if not path:
+        return
+    item = {'title': movie['title'].strip(), 'detail': movie['theater'], 'date': start.strftime('%Y-%m-%d %H:%M')}
+    with open(path, 'a') as f:
+        f.write(json.dumps(item) + '\n')
+
+
 # Update calendar with movies
 def update_google_calendar(service, movies: list):
     existing_events_dict = fetch_all_existing_events(service)
@@ -246,6 +257,7 @@ def update_google_calendar(service, movies: list):
                     added_event = service.events().insert(calendarId=CALENDAR_ID, body=event).execute(num_retries=3)
                     new_event_ids.add(added_event['id'])
                     logging.info(f"Added movie: {movie['title']} at {showtime} on {date_str}.")
+                    record_added(movie, event_datetime)
 
             except ValueError as e:
                 logging.error(f"Skipping event due to error: {e}")
