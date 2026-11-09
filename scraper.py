@@ -99,9 +99,9 @@ def scrap_movies() -> list:
                     'showtimes': showtimes if showtimes else ['Unknown Showtimes']
                 })
 
-            except (AttributeError, IndexError, TypeError) as e:
+            except Exception as e:
                 # one odd listing should never stop the whole run
-                logging.error(f"Error processing movie: {e}")
+                logging.error(f"Error processing movie ({type(e).__name__}): {e}")
 
     return movie_data
 
@@ -259,8 +259,9 @@ def update_google_calendar(service, movies: list):
                     logging.info(f"Added movie: {movie['title']} at {showtime} on {date_str}.")
                     record_added(movie, event_datetime)
 
-            except ValueError as e:
-                logging.error(f"Skipping event due to error: {e}")
+            except Exception as e:
+                # one bad screening (odd date, a Google error after retries) should not stop the rest
+                logging.error(f"Skipping event due to error ({type(e).__name__}): {movie.get('title')} at {showtime}: {e}")
 
 def run():
     # Log the current date and time when the script is executed
@@ -322,8 +323,14 @@ def run():
                 event_key = (movie['title'].strip(), utc_start_datetime.strftime('%Y-%m-%dT%H:%M:%SZ'))
                 new_event_keys.add(event_key)
 
-            except ValueError as e:
-                logging.error(f"Skipping event due to error: {e}")
+            except Exception as e:
+                logging.error(f"Skipping event due to error ({type(e).__name__}): {e}")
+
+    # Safety: if the scrape found nothing (site down or redesigned), deleting "everything not
+    # scraped" would empty the public calendar. Keep it as it is instead.
+    if not new_event_keys:
+        logging.warning("Scrape found no screenings; not deleting any calendar events this run.")
+        return
 
    # Step 3: Identify future events not in the new event keys
     future_events_to_delete = []
@@ -340,7 +347,7 @@ def run():
         try:
             service.events().delete(calendarId=CALENDAR_ID, eventId=event_id).execute(num_retries=3)
             logging.info(f"Deleted future event with ID: {event_id}")
-        except HttpError as error:
+        except Exception as error:
             logging.error(f"Error deleting event: {error}")
 
 
