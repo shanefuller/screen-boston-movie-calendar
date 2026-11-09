@@ -1,4 +1,5 @@
 import os
+import re
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
@@ -30,8 +31,30 @@ def parse_arguments():
     return parser.parse_args()
 
 # Scraping function
+def fetch_page(url: str, attempts: int = 3) -> requests.Response:
+    """GET with a timeout, retrying a slow or dropped connection a few times."""
+    for attempt in range(1, attempts + 1):
+        try:
+            response = requests.get(url, timeout=30)
+            response.raise_for_status()
+            return response
+        except requests.RequestException as e:
+            if attempt == attempts:
+                raise
+            logging.warning(f"Fetching {url} failed ({e}); retry {attempt} of {attempts - 1} in {10 * attempt}s")
+            time.sleep(10 * attempt)
+
+
+def parse_runtime(runtime: str) -> timedelta:
+    """'1h 36m', '1h', '45m' -> timedelta. Unknown or zero runtimes become 2 hours."""
+    hours = re.search(r'(\d+)\s*h', runtime or '')
+    minutes = re.search(r'(\d+)\s*m', runtime or '')
+    duration = timedelta(hours=int(hours.group(1)) if hours else 0, minutes=int(minutes.group(1)) if minutes else 0)
+    return duration if duration > timedelta(0) else timedelta(hours=2)
+
+
 def scrap_movies() -> list:
-    response = requests.get(URL)
+    response = fetch_page(URL)
     soup = BeautifulSoup(response.content, 'html.parser')
     date_containers = soup.find_all('div', class_='max-w-screen')
     movie_data = []
@@ -60,7 +83,7 @@ def scrap_movies() -> list:
                 year_genre_runtime_array = year_genre_runtime.split(',')
 
                 theater = details[2].get_text(strip=True) if len(details) > 2 else 'Unknown Theater'
-                showtime_elements = movie.find_all('p', string=lambda text: 'PM' in text or 'AM' in text)
+                showtime_elements = movie.find_all('p', string=lambda text: bool(text) and ('PM' in text or 'AM' in text))
                 showtimes = [time.get_text(strip=True) for time in showtime_elements]
 
                 movie_data.append({
@@ -75,7 +98,8 @@ def scrap_movies() -> list:
                     'showtimes': showtimes if showtimes else ['Unknown Showtimes']
                 })
 
-            except (AttributeError, IndexError) as e:
+            except (AttributeError, IndexError, TypeError) as e:
+                # one odd listing should never stop the whole run
                 logging.error(f"Error processing movie: {e}")
 
     return movie_data
@@ -98,7 +122,7 @@ def delete_events(service, time_min=None):
                 singleEvents=True,
                 orderBy='startTime',
                 pageToken=page_token
-            ).execute()
+            ).execute(num_retries=3)
 
             events = events_result.get('items', [])
             if not events:
@@ -109,7 +133,7 @@ def delete_events(service, time_min=None):
                 retry_count = 0
                 while retry_count < 3:
                     try:
-                        service.events().delete(calendarId=CALENDAR_ID, eventId=event['id']).execute()
+                        service.events().delete(calendarId=CALENDAR_ID, eventId=event['id']).execute(num_retries=3)
                         logging.info(f"Deleted event: {event['summary']}")
                         break
                     except HttpError as error:
@@ -141,7 +165,7 @@ def fetch_all_existing_events(service):
             singleEvents=True,
             orderBy='startTime',
             pageToken=page_token
-        ).execute()
+        ).execute(num_retries=3)
 
         events = events_result.get('items', [])
 
@@ -191,9 +215,7 @@ def update_google_calendar(service, movies: list):
             event_datetime_str = f"{date_str} {showtime}"
             try:
                 event_datetime = datetime.strptime(event_datetime_str, DATE_FORMAT)
-                hours, minutes = map(int, (movie['runtime'].replace('h', '').replace('m', '').strip().split()))
-                duration = timedelta(hours=hours, minutes=minutes)
-                end_datetime = event_datetime + duration
+                end_datetime = event_datetime + parse_runtime(movie['runtime'])
 
                 local_tz = pytz.timezone(TIMEZONE)
                 utc_start_datetime = local_tz.localize(event_datetime).astimezone(pytz.utc)
@@ -221,7 +243,7 @@ def update_google_calendar(service, movies: list):
                             'timeZone': TIMEZONE,
                         },
                     }
-                    added_event = service.events().insert(calendarId=CALENDAR_ID, body=event).execute()
+                    added_event = service.events().insert(calendarId=CALENDAR_ID, body=event).execute(num_retries=3)
                     new_event_ids.add(added_event['id'])
                     logging.info(f"Added movie: {movie['title']} at {showtime} on {date_str}.")
 
@@ -304,7 +326,7 @@ def run():
     # Step 4: Delete future events that are not in the new list
     for event_id in future_events_to_delete:
         try:
-            service.events().delete(calendarId=CALENDAR_ID, eventId=event_id).execute()
+            service.events().delete(calendarId=CALENDAR_ID, eventId=event_id).execute(num_retries=3)
             logging.info(f"Deleted future event with ID: {event_id}")
         except HttpError as error:
             logging.error(f"Error deleting event: {error}")
