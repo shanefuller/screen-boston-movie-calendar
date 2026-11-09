@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run by cron at 6:30 AM (see `crontab -l`); cron appends this script's output to logfile.log.
+# Run daily at 6:30 AM by ~/Library/LaunchAgents/com.shane.screen-boston-movie-calendar.plist, which appends output to logfile.log.
 # After the scrape, the result is reported to the Trackstar admin Jobs page (if ~/.trackstar-jobs-token exists).
 
 DIR=/Users/shane/Development/screen-boston-movie-calendar
