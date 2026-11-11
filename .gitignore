@@ -1,2 +1,4 @@
 credentials.json
 logfile.log
+.venv/
+*.disabled

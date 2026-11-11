@@ -78,7 +78,8 @@ def scrap_movies() -> list:
                 format_tag = movie.find('p', class_='text-[14px] text-primary')
                 movie_format = format_tag.get_text(strip=True) if format_tag else None
 
-                details = movie.find_all('p', class_='')
+                # paragraphs without a class (written out: newer BeautifulSoup reads class_='' differently)
+                details = [p for p in movie.find_all('p') if not p.get('class')]
                 director = details[0].get_text(strip=True) if details else 'Unknown Director'
                 year_genre_runtime = details[1].get_text(strip=True) if len(details) > 1 else 'Unknown Details'
                 year_genre_runtime_array = year_genre_runtime.split(',')
@@ -108,7 +109,7 @@ def scrap_movies() -> list:
 # Google Calendar Service creation
 def create_google_calendar_service():
     creds = service_account.Credentials.from_service_account_file(
-        '/Users/shane/Development/screen-boston-movie-calendar/credentials.json'
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), 'credentials.json')
     )
     return build('calendar', 'v3', credentials=creds)
 

@@ -1,14 +1,19 @@
 #!/bin/bash
-# Run daily at 6:30 AM by ~/Library/LaunchAgents/com.shane.screen-boston-movie-calendar.plist, which appends output to logfile.log.
+# Run daily at 6:30 AM by a launchd agent (see README), which appends output to logfile.log.
 # After the scrape, the result is reported to the Trackstar admin Jobs page (if ~/.trackstar-jobs-token exists).
+#   PYTHON  the Python to run the scraper with (default: .venv/bin/python here, else python3)
+#   REPORT  the Trackstar report script (default: ~/Development/trackstar/scripts/report-job-run.sh)
 
-DIR=/Users/shane/Development/screen-boston-movie-calendar
-REPORT=/Users/shane/Development/trackstar/scripts/report-job-run.sh
+DIR="$(cd "$(dirname "$0")" && pwd)"
+REPORT="${REPORT:-$HOME/Development/trackstar/scripts/report-job-run.sh}"
+if [ -z "$PYTHON" ]; then
+  if [ -x "$DIR/.venv/bin/python" ]; then PYTHON="$DIR/.venv/bin/python"; else PYTHON=python3; fi
+fi
 STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 RUN_LOG="$(mktemp -t movie-scraper)"
 export ADDED_ITEMS_FILE="$(mktemp -t movie-added)"   # scraper.py writes one JSON line per added screening
 
-/Users/shane/.pyenv/versions/3.8.16/bin/python "$DIR/scraper.py" 2>&1 | tee "$RUN_LOG"
+"$PYTHON" "$DIR/scraper.py" 2>&1 | tee "$RUN_LOG"
 CODE=${PIPESTATUS[0]}
 
 ADDED=$(grep -c "Added movie:" "$RUN_LOG")
@@ -26,7 +31,7 @@ elif [ "$ERRORS" -gt 1 ]; then SUMMARY="$SUMMARY; $ERRORS events skipped with er
 
 if [ -x "$REPORT" ]; then
   ITEMS_JSON="$(mktemp -t movie-items)"
-  /usr/bin/python3 -c 'import json,sys; print(json.dumps([json.loads(l) for l in open(sys.argv[1]) if l.strip()]))' "$ADDED_ITEMS_FILE" > "$ITEMS_JSON"
+  "$PYTHON" -c 'import json,sys; print(json.dumps([json.loads(l) for l in open(sys.argv[1]) if l.strip()]))' "$ADDED_ITEMS_FILE" > "$ITEMS_JSON"
   ITEMS_FILE="$ITEMS_JSON" "$REPORT" screen-boston-movie-calendar "$STATUS" "$STARTED" "$SUMMARY" \
     "{\"added\": $ADDED, \"duplicates\": $DUPES, \"errors\": $ERRORS}"
 fi
