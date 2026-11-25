@@ -1,11 +1,12 @@
 #!/bin/bash
 # Run daily at 6:30 AM by a launchd agent (see README), which appends output to logfile.log.
-# After the scrape, the result is reported to the Trackstar admin Jobs page (if ~/.trackstar-jobs-token exists).
+# After the scrape, the result is reported to the jobs dashboard at https://shanefuller.dev/admin/jobs
+# (if ~/.site-jobs-token exists).
 #   PYTHON  the Python to run the scraper with (default: .venv/bin/python here, else python3)
-#   REPORT  the Trackstar report script (default: ~/Development/trackstar/scripts/report-job-run.sh)
+#   REPORT  the report helper (default: ~/bin/hub_report.py, from the homelab setup)
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
-REPORT="${REPORT:-$HOME/Development/trackstar/scripts/report-job-run.sh}"
+REPORT="${REPORT:-$HOME/bin/hub_report.py}"
 if [ -z "$PYTHON" ]; then
   if [ -x "$DIR/.venv/bin/python" ]; then PYTHON="$DIR/.venv/bin/python"; else PYTHON=python3; fi
 fi
@@ -29,10 +30,10 @@ fi
 if [ "$ERRORS" -eq 1 ]; then SUMMARY="$SUMMARY; 1 event skipped with an error"
 elif [ "$ERRORS" -gt 1 ]; then SUMMARY="$SUMMARY; $ERRORS events skipped with errors"; fi
 
-if [ -x "$REPORT" ]; then
+if [ -f "$REPORT" ]; then
   ITEMS_JSON="$(mktemp -t movie-items)"
   "$PYTHON" -c 'import json,sys; print(json.dumps([json.loads(l) for l in open(sys.argv[1]) if l.strip()]))' "$ADDED_ITEMS_FILE" > "$ITEMS_JSON"
-  ITEMS_FILE="$ITEMS_JSON" "$REPORT" screen-boston-movie-calendar "$STATUS" "$STARTED" "$SUMMARY" \
+  ITEMS_FILE="$ITEMS_JSON" "$PYTHON" "$REPORT" screen-boston-movie-calendar "$STATUS" "$STARTED" "$SUMMARY" \
     "{\"added\": $ADDED, \"duplicates\": $DUPES, \"errors\": $ERRORS}"
 fi
 rm -f "$RUN_LOG" "$ADDED_ITEMS_FILE" "${ITEMS_JSON:-}"
